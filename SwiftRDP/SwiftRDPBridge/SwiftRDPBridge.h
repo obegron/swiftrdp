@@ -29,5 +29,7 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
 - (BOOL)sendKeyboardScancode:(uint32_t)scancode down:(BOOL)down;
 - (BOOL)sendAppleKeycode:(uint32_t)keycode down:(BOOL)down;
 - (NSString *)lastErrorDescription;
++ (NSString *)freeRDPBuildConfig;
++ (BOOL)freeRDPHasVideoToolboxSupport;
 
 @end

@@ -8,6 +8,9 @@ APP_RESOURCES_DIR = $(APP_CONTENTS_DIR)/Resources
 LIB_DIR = $(BUILD_DIR)/lib
 INC_DIR = $(BUILD_DIR)/include/freerdp3
 WINPR_INC_DIR = $(BUILD_DIR)/include/winpr3
+HOMEBREW_PREFIX = $(shell brew --prefix 2>/dev/null || echo /usr/local)
+OPENSSL_PREFIX = $(shell brew --prefix openssl@3 2>/dev/null || echo $(HOMEBREW_PREFIX)/opt/openssl@3)
+FFMPEG_PREFIX = $(shell brew --prefix ffmpeg 2>/dev/null || echo $(HOMEBREW_PREFIX)/opt/ffmpeg)
 APP_BIN = $(APP_MACOS_DIR)/SwiftRDP
 ICON_PNG = Assets/SwiftRDPIcon.png
 APP_ICON = $(APP_RESOURCES_DIR)/SwiftRDP.icns
@@ -24,12 +27,13 @@ SWIFT_TARGET = -target $(ARCH)-apple-macosx$(MACOS_TARGET)
 INC_FLAGS = -I. -I$(INC_DIR) -ISwiftRDP/SwiftRDPBridge -I$(WINPR_INC_DIR)
 CFLAGS = $(INC_FLAGS) $(MACOS_FLAGS)
 # Link against OpenSSL and FFmpeg as required by FreeRDP
-LDFLAGS = -L$(LIB_DIR) -L$(LIB_DIR)/freerdp3 -L/usr/local/opt/openssl@3/lib -L/usr/local/opt/ffmpeg/lib \
+LDFLAGS = -L$(LIB_DIR) -L$(LIB_DIR)/freerdp3 -L$(OPENSSL_PREFIX)/lib -L$(FFMPEG_PREFIX)/lib \
           -lfreerdp3 -lfreerdp-client3 -lwinpr3 \
           -lremdesk-common -lrdpsnd-common \
           -lssl -lcrypto -lavcodec -lavutil -lswscale -lswresample -lz \
           -framework Foundation -framework CoreGraphics -framework CoreServices -framework Security \
           -framework AVFoundation -framework AudioToolbox -framework AudioUnit -framework CoreAudio \
+          -framework VideoToolbox -framework CoreMedia -framework CoreVideo \
           -framework Cocoa -framework CoreFoundation -lc++
 
 # 'all' depends on 'engine' being built first
@@ -52,6 +56,7 @@ app: engine $(APP_ICON)
 		SwiftRDP/SwiftRDP/ConnectionProfile.swift \
 		SwiftRDP/SwiftRDP/ConnectionSettings.swift \
 		SwiftRDP/SwiftRDP/KeychainPasswordStore.swift \
+		SwiftRDP/SwiftRDP/HardwareCapabilities.swift \
 		SwiftRDP/SwiftRDP/main.swift \
 		SwiftRDP/UI/RDPApp.swift \
 		SwiftRDP/UI/ContentView.swift \

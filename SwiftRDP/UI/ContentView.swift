@@ -55,6 +55,11 @@ struct ContentView: View {
                 .font(.callout)
                 .lineLimit(1)
             Spacer()
+            Text(HardwareCapabilities.current.shortLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(HardwareCapabilities.current.detail)
             if manager.isConnected {
                 Button("Disconnect") {
                     manager.disconnect()

@@ -569,6 +569,21 @@ static int my_LogonErrorInfo(freerdp* instance, UINT32 data, UINT32 type) {
     BOOL _connected;
 }
 
++ (NSString *)freeRDPBuildConfig {
+    const char* config = freerdp_get_build_config();
+    if (!config) {
+        return @"";
+    }
+    return [NSString stringWithUTF8String:config];
+}
+
++ (BOOL)freeRDPHasVideoToolboxSupport {
+    NSString* config = [self freeRDPBuildConfig];
+    return [config containsString:@"WITH_VIDEOTOOLBOX=ON"] ||
+           [config containsString:@"WITH_VIDEOTOOLBOX:on"] ||
+           [config containsString:@"WITH_VIDEOTOOLBOX=1"];
+}
+
 - (instancetype)init {
     self = [super init];
     return self;
