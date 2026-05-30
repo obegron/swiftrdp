@@ -1,0 +1,18 @@
+# Build Artifacts
+Build/
+build_src/
+*.o
+SwiftRDPBin
+DirectRDPProbe
+HeadlessRDP
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+*.xcuserdatad
+*.xcuserstate
