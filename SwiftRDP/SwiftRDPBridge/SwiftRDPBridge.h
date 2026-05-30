@@ -19,6 +19,7 @@
            height:(int)height
        colorDepth:(int)colorDepth
    enableRemoteFx:(BOOL)enableRemoteFx
+enableAudioPlayback:(BOOL)enableAudioPlayback
   sharedFolderName:(NSString *)sharedFolderName
   sharedFolderPath:(NSString *)sharedFolderPath;
 - (void)disconnect;

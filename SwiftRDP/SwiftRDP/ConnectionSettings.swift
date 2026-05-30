@@ -5,6 +5,7 @@ struct RDPConnectionSettings {
     var height: Int32
     var colorDepth: Int32
     var enableRemoteFx: Bool
+    var enableAudioPlayback: Bool
     var sharedFolderName: String?
     var sharedFolderPath: String?
 }

@@ -29,7 +29,8 @@ LDFLAGS = -L$(LIB_DIR) -L$(LIB_DIR)/freerdp3 -L/usr/local/opt/openssl@3/lib -L/u
           -lremdesk-common -lrdpsnd-common \
           -lssl -lcrypto -lavcodec -lavutil -lswscale -lswresample -lz \
           -framework Foundation -framework CoreGraphics -framework CoreServices -framework Security \
-          -framework AVFoundation -framework AudioToolbox -framework AudioUnit -framework CoreAudio -lc++
+          -framework AVFoundation -framework AudioToolbox -framework AudioUnit -framework CoreAudio \
+          -framework Cocoa -framework CoreFoundation -lc++
 
 # 'all' depends on 'engine' being built first
 all: engine app

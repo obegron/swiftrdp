@@ -11,6 +11,7 @@ struct ContentView: View {
     @AppStorage("selectedResolution") private var selectedResolution = "1024 x 768"
     @AppStorage("selectedColorDepth") private var colorDepth = 32
     @AppStorage("enableRemoteFx") private var enableRemoteFx = true
+    @AppStorage("enableAudioPlayback") private var enableAudioPlayback = true
     @AppStorage("rememberPassword") private var rememberPassword = false
     @AppStorage("sharedFolderPath") private var sharedFolderPath = ""
 
@@ -124,6 +125,7 @@ struct ContentView: View {
             .frame(width: 88)
 
             Toggle("RemoteFX", isOn: $enableRemoteFx)
+            Toggle("Audio", isOn: $enableAudioPlayback)
             Toggle("Keychain", isOn: $rememberPassword)
 
             Button(sharedFolderTitle) {
@@ -223,6 +225,7 @@ struct ContentView: View {
                 height: resolution.height,
                 colorDepth: Int32(colorDepth),
                 enableRemoteFx: enableRemoteFx,
+                enableAudioPlayback: enableAudioPlayback,
                 sharedFolderName: sharedFolderName,
                 sharedFolderPath: sharedFolderPath.isEmpty ? nil : sharedFolderPath
             )

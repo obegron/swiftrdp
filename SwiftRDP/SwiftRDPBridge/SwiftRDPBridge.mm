@@ -29,6 +29,7 @@ typedef struct
     UINT32 requestedHeight;
     UINT32 requestedColorDepth;
     BOOL enableRemoteFx;
+    BOOL enableAudioPlayback;
     BOOL hasSharedFolder;
 } SwiftRDPContext;
 
@@ -464,7 +465,9 @@ static BOOL my_PreConnect(freerdp* instance) {
            freerdp_settings_get_bool(settings, FreeRDP_GfxAVC444),
            freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec));
 
-    freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, swiftContext->hasSharedFolder);
+    freerdp_settings_set_bool(settings,
+                              FreeRDP_DeviceRedirection,
+                              swiftContext->hasSharedFolder || swiftContext->enableAudioPlayback);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectDrives, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectSmartCards, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_RedirectPrinters, FALSE);
@@ -474,7 +477,7 @@ static BOOL my_PreConnect(freerdp* instance) {
     freerdp_settings_set_uint32(settings,
                                 FreeRDP_ClipboardFeatureMask,
                                 CLIPRDR_FLAG_LOCAL_TO_REMOTE | CLIPRDR_FLAG_REMOTE_TO_LOCAL);
-    freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, swiftContext->enableAudioPlayback);
     freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE);
 
     if (PubSub_SubscribeChannelConnected(instance->context->pubSub, my_OnChannelConnected) < 0) {
@@ -586,6 +589,7 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
     swiftContext->requestedHeight = 768;
     swiftContext->requestedColorDepth = 32;
     swiftContext->enableRemoteFx = TRUE;
+    swiftContext->enableAudioPlayback = TRUE;
     swiftContext->hasSharedFolder = FALSE;
     _instance->context->update->BitmapUpdate = my_BitmapUpdate;
 }
@@ -609,6 +613,7 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
            height:(int)height
        colorDepth:(int)colorDepth
    enableRemoteFx:(BOOL)enableRemoteFx
+enableAudioPlayback:(BOOL)enableAudioPlayback
  sharedFolderName:(NSString *)sharedFolderName
  sharedFolderPath:(NSString *)sharedFolderPath {
     [self freeInstance];
@@ -621,12 +626,14 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
     swiftContext->requestedHeight = MAX(480, height);
     swiftContext->requestedColorDepth = colorDepth == 16 || colorDepth == 24 ? colorDepth : 32;
     swiftContext->enableRemoteFx = enableRemoteFx;
+    swiftContext->enableAudioPlayback = enableAudioPlayback;
     swiftContext->hasSharedFolder = sharedFolderPath.length > 0;
 
     NSString* target = [NSString stringWithFormat:@"/v:%@:%d", host, port];
     NSString* username = [NSString stringWithFormat:@"/u:%@", user];
     NSString* size = [NSString stringWithFormat:@"/size:%dx%d", swiftContext->requestedWidth, swiftContext->requestedHeight];
     NSString* bpp = [NSString stringWithFormat:@"/bpp:%d", swiftContext->requestedColorDepth];
+    NSString* sound = enableAudioPlayback ? @"/sound:sys:mac" : @"/audio-mode:none";
     char* argv[] = {
         (char*)"SwiftRDP",
         (char*)[target UTF8String],
@@ -634,6 +641,7 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
         (char*)"/cert:ignore",
         (char*)[size UTF8String],
         (char*)[bpp UTF8String],
+        (char*)[sound UTF8String],
         (char*)"/network:lan"
     };
 

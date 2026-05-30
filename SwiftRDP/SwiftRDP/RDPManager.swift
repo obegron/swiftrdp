@@ -49,6 +49,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
                 height: settings.height,
                 colorDepth: settings.colorDepth,
                 enableRemoteFx: settings.enableRemoteFx,
+                enableAudioPlayback: settings.enableAudioPlayback,
                 sharedFolderName: settings.sharedFolderName ?? "",
                 sharedFolderPath: settings.sharedFolderPath ?? ""
             )
