@@ -2,10 +2,22 @@ import Foundation
 import CoreGraphics
 
 class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
+    private struct ConnectionParams {
+        let host: String
+        let port: Int32
+        let user: String
+        let password: String
+        let settings: RDPConnectionSettings
+    }
+
     private let bridge = SwiftRDPBridge()
     private let connectionQueue = DispatchQueue(label: "SwiftRDP.connection")
+    private let bridgeLock = NSLock()
     private let frameLock = NSLock()
     private var isRunning = false
+    private var userRequestedDisconnect = false
+    private var reconnectAttempts = 0
+    private var lastConnectionParams: ConnectionParams?
     private var pendingImage: CGImage?
     private var pendingRemoteSize = CGSize(width: 16, height: 10)
     private var frameUpdateScheduled = false
@@ -31,42 +43,54 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
             return
         }
 
+        let params = ConnectionParams(host: host, port: port, user: user, password: password, settings: settings)
+        userRequestedDisconnect = false
+        lastConnectionParams = params
+        reconnectAttempts = 0
+        connect(params)
+    }
+
+    private func connect(_ params: ConnectionParams) {
         DispatchQueue.main.async {
-            self.status = "Connecting to \(host)..."
+            self.status = "Connecting to \(params.host)..."
             self.isConnected = false
             self.isConnecting = true
         }
 
         connectionQueue.async {
-            print("Connecting to \(host)...")
+            print("Connecting to \(params.host)...")
             self.isRunning = false
+            self.bridgeLock.lock()
             let success = self.bridge.connect(
-                toHost: host,
-                port: port,
-                user: user,
-                password: password,
-                width: settings.width,
-                height: settings.height,
-                colorDepth: settings.colorDepth,
-                enableRemoteFx: settings.enableRemoteFx,
-                enableAudioPlayback: settings.enableAudioPlayback,
-                sharedFolderName: settings.sharedFolderName ?? "",
-                sharedFolderPath: settings.sharedFolderPath ?? ""
+                toHost: params.host,
+                port: params.port,
+                user: params.user,
+                password: params.password,
+                width: params.settings.width,
+                height: params.settings.height,
+                colorDepth: params.settings.colorDepth,
+                enableRemoteFx: params.settings.enableRemoteFx,
+                enableAudioPlayback: params.settings.enableAudioPlayback,
+                sharedFolderName: params.settings.sharedFolderName ?? "",
+                sharedFolderPath: params.settings.sharedFolderPath ?? ""
             )
             let error = self.bridge.lastErrorDescription() ?? "Unknown FreeRDP error"
+            self.bridgeLock.unlock()
 
             DispatchQueue.main.async {
                 self.isConnected = success
                 self.isConnecting = false
-                self.status = success ? "Connected to \(host)" : "Failed to connect: \(error)"
+                self.status = success ? "Connected to \(params.host)" : "Failed to connect: \(error)"
             }
 
             if success {
                 self.isRunning = true
+                self.reconnectAttempts = 0
                 print("Successfully connected!")
-                self.scheduleProcessLoop()
+                self.startProcessThread()
             } else {
                 print("Failed to connect.")
+                self.handleUnexpectedDisconnect(error: error)
             }
         }
     }
@@ -98,9 +122,14 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     }
 
     func disconnect() {
+        userRequestedDisconnect = true
+        reconnectAttempts = 0
         connectionQueue.async {
             self.isRunning = false
+            self.clearFrame()
+            self.bridgeLock.lock()
             self.bridge.disconnect()
+            self.bridgeLock.unlock()
 
             DispatchQueue.main.async {
                 self.isConnected = false
@@ -112,46 +141,90 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
 
     func sendMouse(flags: UInt16, x: UInt16, y: UInt16) {
         connectionQueue.async {
+            self.bridgeLock.lock()
             _ = self.bridge.sendMouseEvent(withFlags: flags, x: x, y: y)
+            self.bridgeLock.unlock()
         }
     }
 
     func sendUnicode(_ code: UInt16, down: Bool) {
         connectionQueue.async {
+            self.bridgeLock.lock()
             _ = self.bridge.sendUnicodeKeyboardEvent(code, down: down)
+            self.bridgeLock.unlock()
         }
     }
 
     func sendScancode(_ scancode: UInt32, down: Bool) {
         connectionQueue.async {
+            self.bridgeLock.lock()
             _ = self.bridge.sendKeyboardScancode(scancode, down: down)
+            self.bridgeLock.unlock()
         }
     }
 
     func sendAppleKeycode(_ keycode: UInt32, down: Bool) {
         connectionQueue.async {
+            self.bridgeLock.lock()
             _ = self.bridge.sendAppleKeycode(keycode, down: down)
+            self.bridgeLock.unlock()
         }
     }
     
-    private func scheduleProcessLoop() {
-        connectionQueue.asyncAfter(deadline: .now() + 0.001) {
-            guard self.isRunning else {
-                return
-            }
+    private func startProcessThread() {
+        Thread.detachNewThread { [weak self] in
+            while self?.isRunning == true {
+                self?.bridgeLock.lock()
+                let didProcess = self?.bridge.process() ?? false
+                let error = didProcess ? nil : self?.bridge.lastErrorDescription()
+                self?.bridgeLock.unlock()
 
-            if self.bridge.process() {
-                self.scheduleProcessLoop()
-                return
+                if !didProcess {
+                    self?.isRunning = false
+                    self?.handleUnexpectedDisconnect(error: error ?? "Disconnected")
+                    break
+                }
+                usleep(2000)
             }
+        }
+    }
 
-            self.isRunning = false
-            let error = self.bridge.lastErrorDescription() ?? "Disconnected"
+    private func handleUnexpectedDisconnect(error: String) {
+        clearFrame()
+
+        guard !userRequestedDisconnect, reconnectAttempts < 8, let params = lastConnectionParams else {
+            reconnectAttempts = 0
             DispatchQueue.main.async {
                 self.isConnected = false
                 self.isConnecting = false
                 self.status = error == "Disconnected" ? "Disconnected" : error
             }
+            return
+        }
+
+        let delay = min(30.0, pow(2.0, Double(reconnectAttempts)))
+        reconnectAttempts += 1
+        DispatchQueue.main.async {
+            self.isConnected = false
+            self.isConnecting = false
+            self.status = "Reconnecting in \(Int(delay))s (attempt \(self.reconnectAttempts))..."
+        }
+
+        connectionQueue.asyncAfter(deadline: .now() + delay) {
+            guard !self.userRequestedDisconnect else {
+                return
+            }
+            self.connect(params)
+        }
+    }
+
+    private func clearFrame() {
+        DispatchQueue.main.async {
+            self.frameLock.lock()
+            self.pendingImage = nil
+            self.frameUpdateScheduled = false
+            self.frameLock.unlock()
+            self.image = nil
         }
     }
 }
