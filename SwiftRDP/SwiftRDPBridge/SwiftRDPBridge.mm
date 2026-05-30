@@ -628,7 +628,7 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
     NSString* size = [NSString stringWithFormat:@"/size:%dx%d", swiftContext->requestedWidth, swiftContext->requestedHeight];
     NSString* bpp = [NSString stringWithFormat:@"/bpp:%d", swiftContext->requestedColorDepth];
     char* argv[] = {
-        (char*)"SwiftRDPBin",
+        (char*)"SwiftRDP",
         (char*)[target UTF8String],
         (char*)[username UTF8String],
         (char*)"/cert:ignore",

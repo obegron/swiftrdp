@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag to release, for example v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: brew install cmake ninja openssl@3 ffmpeg
+
+      - name: Build SwiftRDP
+        run: make app
+
+      - name: Package app
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          codesign --force --sign - Build/SwiftRDP.app
+          ditto -c -k --sequesterRsrc --keepParent Build/SwiftRDP.app "dist/SwiftRDP-${RELEASE_TAG}-macos-x86_64.zip"
+          shasum -a 256 "dist/SwiftRDP-${RELEASE_TAG}-macos-x86_64.zip" > "dist/SwiftRDP-${RELEASE_TAG}-macos-x86_64.zip.sha256"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          files: |
+            dist/SwiftRDP-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}-macos-x86_64.zip
+            dist/SwiftRDP-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}-macos-x86_64.zip.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true

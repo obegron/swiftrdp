@@ -1,9 +1,13 @@
 # SwiftRDP Makefile
 
 BUILD_DIR = Build/install
+APP_DIR = Build/SwiftRDP.app
+APP_CONTENTS_DIR = $(APP_DIR)/Contents
+APP_MACOS_DIR = $(APP_CONTENTS_DIR)/MacOS
 LIB_DIR = $(BUILD_DIR)/lib
 INC_DIR = $(BUILD_DIR)/include/freerdp3
 WINPR_INC_DIR = $(BUILD_DIR)/include/winpr3
+APP_BIN = $(APP_MACOS_DIR)/SwiftRDP
 
 # Compiler and Flags
 MACOS_TARGET = 11.0
@@ -33,10 +37,12 @@ engine:
 
 # app depends on engine being present
 app: engine
+	@mkdir -p $(APP_MACOS_DIR)
+	@cp SwiftRDP/Info.plist $(APP_CONTENTS_DIR)/Info.plist
 	@echo "Compiling Bridge..."
 	$(CXX) -c SwiftRDP/SwiftRDPBridge/SwiftRDPBridge.mm $(CFLAGS) -fobjc-arc -std=c++17 -o SwiftRDPBridge.o
 	@echo "Compiling Swift App..."
-	$(SWIFTC) -parse-as-library -o SwiftRDPBin \
+	$(SWIFTC) -parse-as-library -o $(APP_BIN) \
 		$(SWIFT_TARGET) \
 		SwiftRDP/SwiftRDP/RDPManager.swift \
 		SwiftRDP/SwiftRDP/ConnectionProfile.swift \
@@ -52,4 +58,4 @@ app: engine
 
 # clean removes only artifacts, not the Build/ folder itself
 clean:
-	rm -rf *.o SwiftRDPBin
+	rm -rf *.o $(APP_DIR)

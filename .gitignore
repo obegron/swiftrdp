@@ -3,6 +3,7 @@ Build/
 build_src/
 *.o
 SwiftRDPBin
+Build/SwiftRDP.app/
 DirectRDPProbe
 HeadlessRDP
 
