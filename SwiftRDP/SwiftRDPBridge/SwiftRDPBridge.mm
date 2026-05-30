@@ -493,13 +493,17 @@ static BOOL my_PreConnect(freerdp* instance) {
     freerdp_settings_set_bool(settings, FreeRDP_GfxH264, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2, FALSE);
+    freerdp_settings_set_uint32(settings, FreeRDP_FrameAcknowledge, 0);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxSuspendFrameAck, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SoftwareGdi, TRUE);
 
-    printf("Graphics settings: GFX=%d AVC420=%d AVC444=%d RFX=%d\n",
+    printf("Graphics settings: GFX=%d AVC420=%d AVC444=%d RFX=%d ACK=%u GFX_ACK=%d\n",
            freerdp_settings_get_bool(settings, FreeRDP_SupportGraphicsPipeline),
            freerdp_settings_get_bool(settings, FreeRDP_GfxH264),
            freerdp_settings_get_bool(settings, FreeRDP_GfxAVC444),
-           freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec));
+           freerdp_settings_get_bool(settings, FreeRDP_RemoteFxCodec),
+           freerdp_settings_get_uint32(settings, FreeRDP_FrameAcknowledge),
+           !freerdp_settings_get_bool(settings, FreeRDP_GfxSuspendFrameAck));
 
     freerdp_settings_set_bool(settings,
                               FreeRDP_DeviceRedirection,

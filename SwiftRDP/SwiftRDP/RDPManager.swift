@@ -21,11 +21,14 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     private var pendingImage: CGImage?
     private var pendingRemoteSize = CGSize(width: 16, height: 10)
     private var frameUpdateScheduled = false
+    private var lastFramePublishTime: TimeInterval = 0
     @Published var image: CGImage?
     @Published var status = "Disconnected"
     @Published var isConnected = false
     @Published var isConnecting = false
     @Published var remoteSize = CGSize(width: 16, height: 10)
+
+    private let minimumFramePublishInterval: TimeInterval = 1.0 / 30.0
 
     override init() {
         super.init()
@@ -104,14 +107,17 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
             return
         }
         frameUpdateScheduled = true
+        let now = Date.timeIntervalSinceReferenceDate
+        let delay = max(0, minimumFramePublishInterval - (now - lastFramePublishTime))
         frameLock.unlock()
 
-        DispatchQueue.main.async {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             self.frameLock.lock()
             let image = self.pendingImage
             let remoteSize = self.pendingRemoteSize
             self.pendingImage = nil
             self.frameUpdateScheduled = false
+            self.lastFramePublishTime = Date.timeIntervalSinceReferenceDate
             self.frameLock.unlock()
 
             if let image {
@@ -214,6 +220,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
             self.frameLock.lock()
             self.pendingImage = nil
             self.frameUpdateScheduled = false
+            self.lastFramePublishTime = 0
             self.frameLock.unlock()
             self.image = nil
         }
