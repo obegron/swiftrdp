@@ -6,6 +6,8 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>SwiftRDP</string>
+	<key>CFBundleIconFile</key>
+	<string>SwiftRDP</string>
 	<key>CFBundleIdentifier</key>
 	<string>org.swiftrdp.SwiftRDP</string>
 	<key>CFBundleInfoDictionaryVersion</key>

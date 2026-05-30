@@ -4,10 +4,14 @@ BUILD_DIR = Build/install
 APP_DIR = Build/SwiftRDP.app
 APP_CONTENTS_DIR = $(APP_DIR)/Contents
 APP_MACOS_DIR = $(APP_CONTENTS_DIR)/MacOS
+APP_RESOURCES_DIR = $(APP_CONTENTS_DIR)/Resources
 LIB_DIR = $(BUILD_DIR)/lib
 INC_DIR = $(BUILD_DIR)/include/freerdp3
 WINPR_INC_DIR = $(BUILD_DIR)/include/winpr3
 APP_BIN = $(APP_MACOS_DIR)/SwiftRDP
+ICON_PNG = Assets/SwiftRDPIcon.png
+ICONSET_DIR = Build/SwiftRDPIcon.iconset
+APP_ICON = $(APP_RESOURCES_DIR)/SwiftRDP.icns
 
 # Compiler and Flags
 MACOS_TARGET = 11.0
@@ -36,7 +40,7 @@ engine:
 	./scripts/build_freerdp.sh
 
 # app depends on engine being present
-app: engine
+app: engine $(APP_ICON)
 	@mkdir -p $(APP_MACOS_DIR)
 	@cp SwiftRDP/Info.plist $(APP_CONTENTS_DIR)/Info.plist
 	@echo "Compiling Bridge..."
@@ -56,6 +60,20 @@ app: engine
 		SwiftRDP/UI/SecurePasswordField.swift \
 		SwiftRDPBridge.o $(INC_FLAGS) -import-objc-header SwiftRDP/SwiftRDPBridge/SwiftRDPBridge.h $(LDFLAGS) -framework SwiftUI -framework AppKit -framework Metal -framework MetalKit
 
+$(APP_ICON): $(ICON_PNG)
+	@mkdir -p $(ICONSET_DIR) $(APP_RESOURCES_DIR)
+	sips -z 16 16 $(ICON_PNG) --out $(ICONSET_DIR)/icon_16x16.png
+	sips -z 32 32 $(ICON_PNG) --out $(ICONSET_DIR)/icon_16x16@2x.png
+	sips -z 32 32 $(ICON_PNG) --out $(ICONSET_DIR)/icon_32x32.png
+	sips -z 64 64 $(ICON_PNG) --out $(ICONSET_DIR)/icon_32x32@2x.png
+	sips -z 128 128 $(ICON_PNG) --out $(ICONSET_DIR)/icon_128x128.png
+	sips -z 256 256 $(ICON_PNG) --out $(ICONSET_DIR)/icon_128x128@2x.png
+	sips -z 256 256 $(ICON_PNG) --out $(ICONSET_DIR)/icon_256x256.png
+	sips -z 512 512 $(ICON_PNG) --out $(ICONSET_DIR)/icon_256x256@2x.png
+	sips -z 512 512 $(ICON_PNG) --out $(ICONSET_DIR)/icon_512x512.png
+	sips -z 1024 1024 $(ICON_PNG) --out $(ICONSET_DIR)/icon_512x512@2x.png
+	iconutil -c icns $(ICONSET_DIR) -o $(APP_ICON)
+
 # clean removes only artifacts, not the Build/ folder itself
 clean:
-	rm -rf *.o $(APP_DIR)
+	rm -rf *.o $(APP_DIR) $(ICONSET_DIR)
