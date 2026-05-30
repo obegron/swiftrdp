@@ -9,6 +9,7 @@ HeadlessRDP
 
 # macOS
 .DS_Store
+._*
 
 # IDEs
 .vscode/
