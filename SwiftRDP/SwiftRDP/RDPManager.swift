@@ -87,7 +87,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
                 self.isRunning = true
                 self.reconnectAttempts = 0
                 print("Successfully connected!")
-                self.startProcessThread()
+                self.scheduleProcessLoop()
             } else {
                 print("Failed to connect.")
                 self.handleUnexpectedDisconnect(error: error)
@@ -141,51 +141,42 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
 
     func sendMouse(flags: UInt16, x: UInt16, y: UInt16) {
         connectionQueue.async {
-            self.bridgeLock.lock()
             _ = self.bridge.sendMouseEvent(withFlags: flags, x: x, y: y)
-            self.bridgeLock.unlock()
         }
     }
 
     func sendUnicode(_ code: UInt16, down: Bool) {
         connectionQueue.async {
-            self.bridgeLock.lock()
             _ = self.bridge.sendUnicodeKeyboardEvent(code, down: down)
-            self.bridgeLock.unlock()
         }
     }
 
     func sendScancode(_ scancode: UInt32, down: Bool) {
         connectionQueue.async {
-            self.bridgeLock.lock()
             _ = self.bridge.sendKeyboardScancode(scancode, down: down)
-            self.bridgeLock.unlock()
         }
     }
 
     func sendAppleKeycode(_ keycode: UInt32, down: Bool) {
         connectionQueue.async {
-            self.bridgeLock.lock()
             _ = self.bridge.sendAppleKeycode(keycode, down: down)
-            self.bridgeLock.unlock()
         }
     }
     
-    private func startProcessThread() {
-        Thread.detachNewThread { [weak self] in
-            while self?.isRunning == true {
-                self?.bridgeLock.lock()
-                let didProcess = self?.bridge.process() ?? false
-                let error = didProcess ? nil : self?.bridge.lastErrorDescription()
-                self?.bridgeLock.unlock()
-
-                if !didProcess {
-                    self?.isRunning = false
-                    self?.handleUnexpectedDisconnect(error: error ?? "Disconnected")
-                    break
-                }
-                usleep(2000)
+    private func scheduleProcessLoop() {
+        connectionQueue.asyncAfter(deadline: .now() + 0.001) {
+            guard self.isRunning else {
+                return
             }
+
+            if self.bridge.process() {
+                self.scheduleProcessLoop()
+                return
+            }
+
+            self.isRunning = false
+            let error = self.bridge.lastErrorDescription() ?? "Disconnected"
+            self.handleUnexpectedDisconnect(error: error)
         }
     }
 

@@ -209,6 +209,12 @@ final class RemoteDesktopNSView: NSView {
     }
 
     override func flagsChanged(with event: NSEvent) {
+        if event.keyCode == 57 {
+            sendAppleKeycode(event.keyCode, down: true)
+            sendAppleKeycode(event.keyCode, down: false)
+            return
+        }
+
         guard let flag = modifierFlag(for: event.keyCode) else {
             super.flagsChanged(with: event)
             return
@@ -294,8 +300,6 @@ final class RemoteDesktopNSView: NSView {
             return .option
         case 54, 55:
             return .command
-        case 57:
-            return .capsLock
         default:
             return nil
         }
