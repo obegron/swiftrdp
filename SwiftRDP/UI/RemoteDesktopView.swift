@@ -3,6 +3,7 @@ import SwiftUI
 
 private enum RDPInput {
     static let ptrFlagsWheel: UInt16 = 0x0200
+    static let ptrFlagsHWheel: UInt16 = 0x0400
     static let ptrFlagsWheelNegative: UInt16 = 0x0100
     static let ptrFlagsMove: UInt16 = 0x0800
     static let ptrFlagsDown: UInt16 = 0x8000
@@ -134,8 +135,12 @@ final class RemoteDesktopNSView: NSView {
             return
         }
 
-        NSGraphicsContext.current?.imageInterpolation = scaleToBounds ? .high : .none
-        NSImage(cgImage: image, size: remoteSize).draw(in: imageRect)
+        guard let graphicsContext = NSGraphicsContext.current else {
+            return
+        }
+
+        graphicsContext.imageInterpolation = scaleToBounds ? .high : .none
+        graphicsContext.cgContext.draw(image, in: imageRect)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -186,14 +191,8 @@ final class RemoteDesktopNSView: NSView {
             return
         }
 
-        let delta = Int(event.scrollingDeltaY == 0 ? event.scrollingDeltaX : event.scrollingDeltaY)
-        guard delta != 0 else {
-            return
-        }
-
-        let amount = UInt16(min(0x01ff, max(1, abs(delta) * 24)))
-        let direction: UInt16 = delta < 0 ? RDPInput.ptrFlagsWheelNegative : 0
-        onMouse?(RDPInput.ptrFlagsWheel | direction | amount, point.x, point.y)
+        sendScroll(delta: Int(event.scrollingDeltaY), wheelFlag: RDPInput.ptrFlagsWheel, at: point)
+        sendScroll(delta: Int(event.scrollingDeltaX), wheelFlag: RDPInput.ptrFlagsHWheel, at: point)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -251,6 +250,16 @@ final class RemoteDesktopNSView: NSView {
             return
         }
         onMouse?(flags, point.x, point.y)
+    }
+
+    private func sendScroll(delta: Int, wheelFlag: UInt16, at point: (x: UInt16, y: UInt16)) {
+        guard delta != 0 else {
+            return
+        }
+
+        let amount = UInt16(min(0x01ff, max(1, abs(delta) * 24)))
+        let direction: UInt16 = delta < 0 ? RDPInput.ptrFlagsWheelNegative : 0
+        onMouse?(wheelFlag | direction | amount, point.x, point.y)
     }
 
     private func remotePoint(for event: NSEvent) -> (x: UInt16, y: UInt16)? {

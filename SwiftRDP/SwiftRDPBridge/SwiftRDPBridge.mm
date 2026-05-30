@@ -332,8 +332,10 @@ static BOOL my_EndPaint(rdpContext* context) {
     }
 
     const size_t byteCount = (size_t)gdi->stride * (size_t)gdi->height;
-    NSData* frameData = [NSData dataWithBytes:gdi->primary_buffer length:byteCount];
-    CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)frameData);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL,
+                                                              gdi->primary_buffer,
+                                                              byteCount,
+                                                              NULL);
     if (!provider) {
         return result;
     }
@@ -524,33 +526,6 @@ static int my_LogonErrorInfo(freerdp* instance, UINT32 data, UINT32 type) {
     return 1;
 }
 
-static BOOL my_BitmapUpdate(rdpContext* context, const BITMAP_UPDATE* bitmap) {
-    if (bitmap->number > 0) {
-        printf("BitmapUpdate: %d rects\n", bitmap->number);
-        // We'll process the first rectangle as a start
-        BITMAP_DATA* rect = &bitmap->rectangles[0];
-        printf("Rect: %dx%d\n", rect->destLeft, rect->destTop);
-    }
-    return TRUE;
-}
-
-#include <freerdp/client/rdpgfx.h>
-
-static UINT my_RdpgfxStartFrame(RdpgfxClientContext* context, const RDPGFX_START_FRAME_PDU* frame) {
-    printf("Rdpgfx StartFrame: id=%d\n", frame->frameId);
-    return CHANNEL_RC_OK;
-}
-
-static UINT my_RdpgfxEndFrame(RdpgfxClientContext* context, const RDPGFX_END_FRAME_PDU* frame) {
-    printf("Rdpgfx EndFrame: id=%d\n", frame->frameId);
-    return CHANNEL_RC_OK;
-}
-
-static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_SURFACE_COMMAND* command) {
-    printf("Rdpgfx SurfaceCommand: %dx%d\n", command->width, command->height);
-    return CHANNEL_RC_OK;
-}
-
 @implementation SwiftRDPBridge {
     freerdp *_instance;
     BOOL _connected;
@@ -591,7 +566,6 @@ static UINT my_RdpgfxSurfaceCommand(RdpgfxClientContext* context, const RDPGFX_S
     swiftContext->enableRemoteFx = TRUE;
     swiftContext->enableAudioPlayback = TRUE;
     swiftContext->hasSharedFolder = FALSE;
-    _instance->context->update->BitmapUpdate = my_BitmapUpdate;
 }
 
 - (void)freeInstance {
@@ -671,6 +645,7 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
 
     freerdp_settings_set_string(settings, FreeRDP_Password, [password UTF8String]);
 
+    // TODO: expose certificate handling in the UI and support fingerprint pinning.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_Authentication, TRUE);
     
