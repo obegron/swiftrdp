@@ -25,6 +25,9 @@ typedef struct
     UINT32 requestedClipboardFormat;
     NSInteger lastPasteboardChangeCount;
     NSTimeInterval lastClipboardPollTime;
+    CFStringRef cachedPasteboardString;
+    NSInteger cachedPasteboardChangeCount;
+    BOOL pasteboardPollPending;
     UINT32 requestedWidth;
     UINT32 requestedHeight;
     UINT32 requestedColorDepth;
@@ -40,49 +43,65 @@ static SwiftRDPBridge* bridge_from_context(rdpContext* context) {
 
 static BOOL my_AuthenticateEx(freerdp* instance, char** username, char** password, char** domain, rdp_auth_reason reason) {
     printf("AuthenticateEx called (reason: %d)\n", reason);
-    return *password && strlen(*password) > 0;
+    return password && *password && strlen(*password) > 0;
 }
 
-static NSString* pasteboard_string(void) {
-    __block NSString* result = nil;
-    void (^readBlock)(void) = ^{
-        result = [[[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString] copy];
-    };
-
-    if ([NSThread isMainThread]) {
-        readBlock();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), readBlock);
+static NSString* cached_pasteboard_string(SwiftRDPContext* context) {
+    if (!context) {
+        return nil;
     }
 
-    return result;
+    @synchronized([SwiftRDPBridge class]) {
+        return [(__bridge NSString*)context->cachedPasteboardString copy];
+    }
 }
 
-static NSInteger pasteboard_change_count(void) {
-    __block NSInteger changeCount = 0;
-    void (^readBlock)(void) = ^{
-        changeCount = [[NSPasteboard generalPasteboard] changeCount];
-    };
-
-    if ([NSThread isMainThread]) {
-        readBlock();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), readBlock);
+static NSInteger cached_pasteboard_change_count(SwiftRDPContext* context) {
+    if (!context) {
+        return -1;
     }
 
-    return changeCount;
+    @synchronized([SwiftRDPBridge class]) {
+        return context->cachedPasteboardChangeCount;
+    }
 }
 
-static void set_pasteboard_string(NSString* string) {
+static void update_cached_pasteboard(SwiftRDPContext* context, NSString* string, NSInteger changeCount) {
+    if (!context) {
+        return;
+    }
+
+    @synchronized([SwiftRDPBridge class]) {
+        if (context->cachedPasteboardString) {
+            CFRelease(context->cachedPasteboardString);
+            context->cachedPasteboardString = NULL;
+        }
+        if (string) {
+            context->cachedPasteboardString = (__bridge_retained CFStringRef)[string copy];
+        }
+        context->cachedPasteboardChangeCount = changeCount;
+        context->pasteboardPollPending = FALSE;
+    }
+}
+
+static void set_pasteboard_string(CliprdrClientContext* cliprdr, NSString* string) {
     if (!string) {
         return;
     }
 
     NSString* copied = [string copy];
+    SwiftRDPContext* context = cliprdr && cliprdr->custom ? (SwiftRDPContext*)cliprdr->custom : NULL;
     dispatch_async(dispatch_get_main_queue(), ^{
         NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
         [pasteboard clearContents];
         [pasteboard setString:copied forType:NSPasteboardTypeString];
+        NSInteger changeCount = [pasteboard changeCount];
+        if (context) {
+            update_cached_pasteboard(context, copied, changeCount);
+            @synchronized([SwiftRDPBridge class]) {
+                context->lastPasteboardChangeCount = changeCount;
+            }
+        }
     });
 }
 
@@ -160,7 +179,8 @@ static UINT cliprdr_send_client_format_list(CliprdrClientContext* cliprdr) {
         return CHANNEL_RC_OK;
     }
 
-    NSString* string = pasteboard_string();
+    SwiftRDPContext* context = cliprdr->custom ? (SwiftRDPContext*)cliprdr->custom : NULL;
+    NSString* string = cached_pasteboard_string(context);
     CLIPRDR_FORMAT formats[2] = {0};
     UINT32 numFormats = 0;
 
@@ -174,8 +194,8 @@ static UINT cliprdr_send_client_format_list(CliprdrClientContext* cliprdr) {
     formatList.numFormats = numFormats;
     formatList.formats = formats;
 
-    if (cliprdr->custom) {
-        ((SwiftRDPContext*)cliprdr->custom)->lastPasteboardChangeCount = pasteboard_change_count();
+    if (context) {
+        context->lastPasteboardChangeCount = cached_pasteboard_change_count(context);
     }
 
     return cliprdr->ClientFormatList(cliprdr, &formatList);
@@ -261,7 +281,8 @@ static UINT my_cliprdr_server_format_data_request(CliprdrClientContext* cliprdr,
         return CHANNEL_RC_OK;
     }
 
-    NSString* string = pasteboard_string();
+    SwiftRDPContext* context = cliprdr->custom ? (SwiftRDPContext*)cliprdr->custom : NULL;
+    NSString* string = cached_pasteboard_string(context);
     NSData* data = clipboard_data_for_format(string, formatDataRequest->requestedFormatId);
 
     CLIPRDR_FORMAT_DATA_RESPONSE response = {0};
@@ -287,7 +308,7 @@ static UINT my_cliprdr_server_format_data_response(CliprdrClientContext* cliprdr
     NSString* string = string_from_clipboard_data(formatDataResponse->requestedFormatData,
                                                  formatDataResponse->common.dataLen,
                                                  formatId);
-    set_pasteboard_string(string);
+    set_pasteboard_string(cliprdr, string);
     return CHANNEL_RC_OK;
 }
 
@@ -302,8 +323,21 @@ static void cliprdr_poll_local_pasteboard(SwiftRDPContext* context) {
     }
     context->lastClipboardPollTime = now;
 
-    const NSInteger changeCount = pasteboard_change_count();
+    const NSInteger changeCount = cached_pasteboard_change_count(context);
     if (context->lastPasteboardChangeCount == changeCount) {
+        BOOL shouldPoll = FALSE;
+        @synchronized([SwiftRDPBridge class]) {
+            shouldPoll = !context->pasteboardPollPending;
+            context->pasteboardPollPending = TRUE;
+        }
+
+        if (shouldPoll) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+                NSString* string = [[pasteboard stringForType:NSPasteboardTypeString] copy];
+                update_cached_pasteboard(context, string, [pasteboard changeCount]);
+            });
+        }
         return;
     }
 
@@ -566,6 +600,8 @@ static int my_LogonErrorInfo(freerdp* instance, UINT32 data, UINT32 type) {
     swiftContext->enableRemoteFx = TRUE;
     swiftContext->enableAudioPlayback = TRUE;
     swiftContext->hasSharedFolder = FALSE;
+    swiftContext->lastPasteboardChangeCount = -1;
+    swiftContext->cachedPasteboardChangeCount = -1;
 }
 
 - (void)freeInstance {
@@ -573,6 +609,11 @@ static int my_LogonErrorInfo(freerdp* instance, UINT32 data, UINT32 type) {
         if (_connected) {
             freerdp_disconnect(_instance);
             _connected = NO;
+        }
+        SwiftRDPContext* swiftContext = (SwiftRDPContext*)_instance->context;
+        if (swiftContext && swiftContext->cachedPasteboardString) {
+            CFRelease(swiftContext->cachedPasteboardString);
+            swiftContext->cachedPasteboardString = NULL;
         }
         freerdp_client_context_free(_instance->context);
         _instance = NULL;
@@ -612,7 +653,6 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
         (char*)"SwiftRDP",
         (char*)[target UTF8String],
         (char*)[username UTF8String],
-        (char*)"/cert:ignore",
         (char*)[size UTF8String],
         (char*)[bpp UTF8String],
         (char*)[sound UTF8String],

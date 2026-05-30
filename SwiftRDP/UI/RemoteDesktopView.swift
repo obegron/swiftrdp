@@ -140,7 +140,12 @@ final class RemoteDesktopNSView: NSView {
         }
 
         graphicsContext.imageInterpolation = scaleToBounds ? .high : .none
-        graphicsContext.cgContext.draw(image, in: imageRect)
+        let context = graphicsContext.cgContext
+        context.saveGState()
+        context.translateBy(x: 0, y: imageRect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: CGRect(origin: CGPoint(x: imageRect.minX, y: 0), size: imageRect.size))
+        context.restoreGState()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -204,12 +209,6 @@ final class RemoteDesktopNSView: NSView {
     }
 
     override func flagsChanged(with event: NSEvent) {
-        if event.keyCode == 57 {
-            sendAppleKeycode(event.keyCode, down: true)
-            sendAppleKeycode(event.keyCode, down: false)
-            return
-        }
-
         guard let flag = modifierFlag(for: event.keyCode) else {
             super.flagsChanged(with: event)
             return
@@ -295,6 +294,8 @@ final class RemoteDesktopNSView: NSView {
             return .option
         case 54, 55:
             return .command
+        case 57:
+            return .capsLock
         default:
             return nil
         }
