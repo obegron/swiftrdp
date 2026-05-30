@@ -14,7 +14,6 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     private let connectionQueue = DispatchQueue(label: "SwiftRDP.connection")
     private let bridgeLock = NSLock()
     private let frameLock = NSLock()
-    private let inputLock = NSLock()
     private var isRunning = false
     private var userRequestedDisconnect = false
     private var reconnectAttempts = 0
@@ -22,15 +21,11 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     private var pendingImage: CGImage?
     private var pendingRemoteSize = CGSize(width: 16, height: 10)
     private var frameUpdateScheduled = false
-    private var pendingMouseMove: (flags: UInt16, x: UInt16, y: UInt16)?
-    private var mouseMoveScheduled = false
     @Published var image: CGImage?
     @Published var status = "Disconnected"
     @Published var isConnected = false
     @Published var isConnecting = false
     @Published var remoteSize = CGSize(width: 16, height: 10)
-
-    private static let ptrFlagsMove: UInt16 = 0x0800
 
     override init() {
         super.init()
@@ -145,30 +140,6 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     }
 
     func sendMouse(flags: UInt16, x: UInt16, y: UInt16) {
-        if flags == Self.ptrFlagsMove {
-            inputLock.lock()
-            pendingMouseMove = (flags: flags, x: x, y: y)
-            if mouseMoveScheduled {
-                inputLock.unlock()
-                return
-            }
-            mouseMoveScheduled = true
-            inputLock.unlock()
-
-            connectionQueue.async {
-                self.inputLock.lock()
-                let move = self.pendingMouseMove
-                self.pendingMouseMove = nil
-                self.mouseMoveScheduled = false
-                self.inputLock.unlock()
-
-                if let move {
-                    _ = self.bridge.sendMouseEvent(withFlags: move.flags, x: move.x, y: move.y)
-                }
-            }
-            return
-        }
-
         connectionQueue.async {
             _ = self.bridge.sendMouseEvent(withFlags: flags, x: x, y: y)
         }
