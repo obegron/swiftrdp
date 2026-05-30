@@ -57,7 +57,7 @@ struct ContentView: View {
             Spacer()
             Text(HardwareCapabilities.current.shortLabel)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundColor(.secondary)
                 .lineLimit(1)
                 .help(HardwareCapabilities.current.detail)
             if manager.isConnected {
