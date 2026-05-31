@@ -28,7 +28,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     @Published var isConnecting = false
     @Published var remoteSize = CGSize(width: 16, height: 10)
 
-    private let minimumFramePublishInterval: TimeInterval = 1.0 / 30.0
+    private let minimumFramePublishInterval: TimeInterval = 1.0 / 60.0
 
     override init() {
         super.init()

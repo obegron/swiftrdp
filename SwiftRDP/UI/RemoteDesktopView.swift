@@ -139,7 +139,9 @@ final class RemoteDesktopNSView: NSView {
             return
         }
 
-        graphicsContext.imageInterpolation = .none
+        let scaled = abs(imageRect.width - CGFloat(image.width)) > 0.5 ||
+            abs(imageRect.height - CGFloat(image.height)) > 0.5
+        graphicsContext.imageInterpolation = scaled ? .high : .none
         let context = graphicsContext.cgContext
         context.saveGState()
         context.translateBy(x: 0, y: imageRect.maxY)
