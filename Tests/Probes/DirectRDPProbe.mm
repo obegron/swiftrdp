@@ -22,9 +22,14 @@ static void probePostDisconnect(freerdp* instance) {
 
 int main(int argc, const char* argv[]) {
     @autoreleasepool {
-        NSString* host = argc > 1 ? [NSString stringWithUTF8String:argv[1]] : @"192.168.0.13";
-        NSString* user = argc > 2 ? [NSString stringWithUTF8String:argv[2]] : @"hej";
-        NSString* password = argc > 3 ? [NSString stringWithUTF8String:argv[3]] : @"hej";
+        if (argc < 4) {
+            printf("usage: DirectRDPProbe <host> <user> <password> [port]\n");
+            return 1;
+        }
+
+        NSString* host = [NSString stringWithUTF8String:argv[1]];
+        NSString* user = [NSString stringWithUTF8String:argv[2]];
+        NSString* password = [NSString stringWithUTF8String:argv[3]];
         int port = argc > 4 ? atoi(argv[4]) : 3389;
 
         RDP_CLIENT_ENTRY_POINTS entryPoints = { 0 };

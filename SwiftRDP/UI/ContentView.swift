@@ -27,6 +27,7 @@ struct ContentView: View {
             toolbar
 
             RemoteDesktopView(
+                isConnected: manager.isConnected,
                 image: manager.image,
                 remoteSize: manager.remoteSize,
                 onMouse: manager.sendMouse,

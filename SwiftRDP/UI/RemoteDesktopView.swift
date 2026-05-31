@@ -13,6 +13,7 @@ private enum RDPInput {
 }
 
 struct RemoteDesktopView: NSViewRepresentable {
+    let isConnected: Bool
     let image: CGImage?
     let remoteSize: CGSize
     let onMouse: (UInt16, UInt16, UInt16) -> Void
@@ -30,6 +31,7 @@ struct RemoteDesktopView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: RemoteDesktopScrollView, context: Context) {
+        view.remoteView.isConnected = isConnected
         view.remoteView.image = image
         view.remoteView.remoteSize = remoteSize
         view.remoteView.onMouse = onMouse
@@ -79,6 +81,16 @@ final class RemoteDesktopScrollView: NSScrollView {
 
 final class RemoteDesktopNSView: NSView {
     var image: CGImage?
+    var isConnected = false {
+        didSet {
+            if isConnected && !oldValue {
+                window?.makeFirstResponder(self)
+                syncModifierState(with: NSEvent.modifierFlags, force: true)
+            } else if !isConnected && oldValue {
+                pressedModifierKeycodes.removeAll()
+            }
+        }
+    }
     var remoteSize = CGSize(width: 16, height: 10)
     var scaleToBounds = false
     var onMouse: ((UInt16, UInt16, UInt16) -> Void)?
@@ -109,6 +121,15 @@ final class RemoteDesktopNSView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
+        if isConnected {
+            window?.makeFirstResponder(self)
+            syncModifierState(with: NSEvent.modifierFlags, force: true)
+        }
+    }
+
+    override func resignFirstResponder() -> Bool {
+        releasePressedModifiers()
+        return true
     }
 
     override func updateTrackingAreas() {
@@ -152,48 +173,60 @@ final class RemoteDesktopNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsDown | RDPInput.ptrFlagsButton1)
     }
 
     override func mouseUp(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsButton1)
     }
 
     override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsDown | RDPInput.ptrFlagsButton2)
     }
 
     override func rightMouseUp(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsButton2)
     }
 
     override func otherMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsDown | RDPInput.ptrFlagsButton3)
     }
 
     override func otherMouseUp(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsButton3)
     }
 
     override func mouseMoved(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsMove)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsMove)
     }
 
     override func rightMouseDragged(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsMove)
     }
 
     override func otherMouseDragged(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         sendPointer(event, flags: RDPInput.ptrFlagsMove)
     }
 
     override func scrollWheel(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
+
         guard let point = remotePoint(for: event) else {
             return
         }
@@ -203,10 +236,12 @@ final class RemoteDesktopNSView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         _ = sendSpecialKey(event, down: true)
     }
 
     override func keyUp(with event: NSEvent) {
+        syncModifierState(with: event.modifierFlags)
         _ = sendSpecialKey(event, down: false)
     }
 
@@ -222,16 +257,17 @@ final class RemoteDesktopNSView: NSView {
             return
         }
 
-        let isDown = event.modifierFlags.contains(flag)
         let wasDown = pressedModifierKeycodes.contains(event.keyCode)
 
-        if isDown && !wasDown {
+        if !wasDown && event.modifierFlags.contains(flag) {
             pressedModifierKeycodes.insert(event.keyCode)
             sendAppleKeycode(event.keyCode, down: true)
-        } else if !isDown && wasDown {
+        } else if wasDown {
             pressedModifierKeycodes.remove(event.keyCode)
             sendAppleKeycode(event.keyCode, down: false)
         }
+
+        syncModifierState(with: event.modifierFlags)
     }
 
     private var imageRect: CGRect {
@@ -290,6 +326,40 @@ final class RemoteDesktopNSView: NSView {
 
     private func sendAppleKeycode(_ keyCode: UInt16, down: Bool) {
         onAppleKeycode?(UInt32(keyCode), down)
+    }
+
+    private func syncModifierState(with flags: NSEvent.ModifierFlags, force: Bool = false) {
+        for group in modifierGroups {
+            let pressedInGroup = pressedModifierKeycodes.intersection(group.keyCodes)
+            if flags.contains(group.flag) {
+                let keyCode = pressedInGroup.first ?? group.defaultKeyCode
+                if force || pressedInGroup.isEmpty {
+                    pressedModifierKeycodes.insert(keyCode)
+                    sendAppleKeycode(keyCode, down: true)
+                }
+            } else {
+                for keyCode in pressedInGroup {
+                    pressedModifierKeycodes.remove(keyCode)
+                    sendAppleKeycode(keyCode, down: false)
+                }
+            }
+        }
+    }
+
+    private func releasePressedModifiers() {
+        for keyCode in pressedModifierKeycodes {
+            sendAppleKeycode(keyCode, down: false)
+        }
+        pressedModifierKeycodes.removeAll()
+    }
+
+    private var modifierGroups: [(flag: NSEvent.ModifierFlags, keyCodes: Set<UInt16>, defaultKeyCode: UInt16)] {
+        [
+            (.shift, [56, 60], 56),
+            (.control, [59, 62], 59),
+            (.option, [58, 61], 58),
+            (.command, [54, 55], 55)
+        ]
     }
 
     private func modifierFlag(for keyCode: UInt16) -> NSEvent.ModifierFlags? {

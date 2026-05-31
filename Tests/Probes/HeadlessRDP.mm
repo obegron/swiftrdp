@@ -3,20 +3,30 @@
 
 int main(int argc, const char* argv[]) {
     @autoreleasepool {
-        NSString* host = @"192.168.0.13";
-        NSString* user = @"hej";
-        NSString* password = @"hej";
-        int port = 3389;
+        if (argc < 4) {
+            printf("usage: HeadlessRDP <host> <user> <password> [port]\n");
+            return 1;
+        }
 
-        if (argc > 1) host = [NSString stringWithUTF8String:argv[1]];
-        if (argc > 2) user = [NSString stringWithUTF8String:argv[2]];
-        if (argc > 3) password = [NSString stringWithUTF8String:argv[3]];
-        if (argc > 4) port = atoi(argv[4]);
+        NSString* host = [NSString stringWithUTF8String:argv[1]];
+        NSString* user = [NSString stringWithUTF8String:argv[2]];
+        NSString* password = [NSString stringWithUTF8String:argv[3]];
+        int port = argc > 4 ? atoi(argv[4]) : 3389;
 
         SwiftRDPBridge* bridge = [SwiftRDPBridge new];
         printf("Headless connect to %s:%d as %s\n", [host UTF8String], port, [user UTF8String]);
 
-        BOOL connected = [bridge connectToHost:host port:port user:user password:password];
+        BOOL connected = [bridge connectToHost:host
+                                          port:port
+                                          user:user
+                                      password:password
+                                         width:1024
+                                        height:768
+                                    colorDepth:32
+                                enableRemoteFx:YES
+                           enableAudioPlayback:NO
+                              sharedFolderName:@""
+                              sharedFolderPath:@""];
         if (!connected) {
             NSString* error = [bridge lastErrorDescription] ?: @"Unknown FreeRDP error";
             printf("CONNECT_FAILED: %s\n", [error UTF8String]);

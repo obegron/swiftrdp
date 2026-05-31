@@ -61,9 +61,8 @@ app: engine $(APP_ICON)
 		SwiftRDP/UI/RDPApp.swift \
 		SwiftRDP/UI/ContentView.swift \
 		SwiftRDP/UI/RemoteDesktopView.swift \
-		SwiftRDP/UI/MetalView.swift \
 		SwiftRDP/UI/SecurePasswordField.swift \
-		SwiftRDPBridge.o $(INC_FLAGS) -import-objc-header SwiftRDP/SwiftRDPBridge/SwiftRDPBridge.h $(LDFLAGS) -framework SwiftUI -framework AppKit -framework Metal -framework MetalKit
+		SwiftRDPBridge.o $(INC_FLAGS) -import-objc-header SwiftRDP/SwiftRDPBridge/SwiftRDPBridge.h $(LDFLAGS) -framework SwiftUI -framework AppKit
 
 $(APP_ICON): $(ICON_PNG)
 	@mkdir -p $(APP_RESOURCES_DIR)
