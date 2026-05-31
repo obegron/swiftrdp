@@ -12,6 +12,7 @@
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/gdi/gfx.h>
 #include <winpr/input.h>
+#include <winpr/synch.h>
 #include <winpr/user.h>
 #include <dispatch/dispatch.h>
 #include <inttypes.h>
@@ -722,6 +723,29 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
 
 - (BOOL)process {
     if (!_instance) return FALSE;
+
+    HANDLE handles[64] = { 0 };
+    const DWORD handleCount = freerdp_get_event_handles(_instance->context,
+                                                        handles,
+                                                        sizeof(handles) / sizeof(handles[0]));
+    if (handleCount == 0) {
+        _connected = NO;
+        return FALSE;
+    }
+
+    const DWORD waitStatus = WaitForMultipleObjects(handleCount, handles, FALSE, 10);
+    if (waitStatus == WAIT_FAILED) {
+        _connected = NO;
+        return FALSE;
+    }
+
+    if (waitStatus == WAIT_TIMEOUT) {
+        if (_connected) {
+            cliprdr_poll_local_pasteboard((SwiftRDPContext*)_instance->context);
+        }
+        return TRUE;
+    }
+
     BOOL result = freerdp_check_event_handles(_instance->context);
     if (!result) {
         _connected = NO;

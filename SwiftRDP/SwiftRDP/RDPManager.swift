@@ -12,6 +12,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
 
     private let bridge = SwiftRDPBridge()
     private let connectionQueue = DispatchQueue(label: "SwiftRDP.connection")
+    private let inputQueue = DispatchQueue(label: "SwiftRDP.input", qos: .userInteractive)
     private let bridgeLock = NSLock()
     private let frameLock = NSLock()
     private var isRunning = false
@@ -63,6 +64,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
         connectionQueue.async {
             print("Connecting to \(params.host)...")
             self.isRunning = false
+            self.inputQueue.sync {}
             self.bridgeLock.lock()
             let success = self.bridge.connect(
                 toHost: params.host,
@@ -133,6 +135,7 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
         connectionQueue.async {
             self.isRunning = false
             self.clearFrame()
+            self.inputQueue.sync {}
             self.bridgeLock.lock()
             self.bridge.disconnect()
             self.bridgeLock.unlock()
@@ -146,31 +149,39 @@ class RDPManager: NSObject, ObservableObject, SwiftRDPBridgeDelegate {
     }
 
     func sendMouse(flags: UInt16, x: UInt16, y: UInt16) {
-        connectionQueue.async {
+        inputQueue.async {
+            self.bridgeLock.lock()
+            defer { self.bridgeLock.unlock() }
             _ = self.bridge.sendMouseEvent(withFlags: flags, x: x, y: y)
         }
     }
 
     func sendUnicode(_ code: UInt16, down: Bool) {
-        connectionQueue.async {
+        inputQueue.async {
+            self.bridgeLock.lock()
+            defer { self.bridgeLock.unlock() }
             _ = self.bridge.sendUnicodeKeyboardEvent(code, down: down)
         }
     }
 
     func sendScancode(_ scancode: UInt32, down: Bool) {
-        connectionQueue.async {
+        inputQueue.async {
+            self.bridgeLock.lock()
+            defer { self.bridgeLock.unlock() }
             _ = self.bridge.sendKeyboardScancode(scancode, down: down)
         }
     }
 
     func sendAppleKeycode(_ keycode: UInt32, down: Bool) {
-        connectionQueue.async {
+        inputQueue.async {
+            self.bridgeLock.lock()
+            defer { self.bridgeLock.unlock() }
             _ = self.bridge.sendAppleKeycode(keycode, down: down)
         }
     }
     
     private func scheduleProcessLoop() {
-        connectionQueue.asyncAfter(deadline: .now() + 0.001) {
+        connectionQueue.async {
             guard self.isRunning else {
                 return
             }
