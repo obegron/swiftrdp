@@ -36,6 +36,7 @@ typedef struct
     BOOL enableAudioPlayback;
     BOOL hasSharedFolder;
     NSTimeInterval lastImagePublishTime;
+    BOOL imagePublishPending;
     NSTimeInterval lastTelemetryTime;
     NSUInteger processWakeCount;
     NSUInteger readyEventCount;
@@ -45,6 +46,8 @@ typedef struct
 } SwiftRDPContext;
 
 static const NSTimeInterval kMinimumImagePublishInterval = 1.0 / 30.0;
+
+static SwiftRDPBridge* bridge_from_context(rdpContext* context);
 
 static void log_telemetry_if_due(SwiftRDPContext* context) {
     if (!context) {
@@ -75,6 +78,64 @@ static void log_telemetry_if_due(SwiftRDPContext* context) {
     context->maxReadyBurst = 0;
     context->endPaintCount = 0;
     context->imagePublishCount = 0;
+}
+
+static void publish_pending_image(SwiftRDPContext* swiftContext) {
+    if (!swiftContext || !swiftContext->imagePublishPending) {
+        return;
+    }
+
+    const NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - swiftContext->lastImagePublishTime < kMinimumImagePublishInterval) {
+        return;
+    }
+
+    rdpContext* context = (rdpContext*)swiftContext;
+    if (!context->gdi || !context->gdi->primary_buffer) {
+        swiftContext->imagePublishPending = FALSE;
+        return;
+    }
+
+    rdpGdi* gdi = context->gdi;
+    if (gdi->width <= 0 || gdi->height <= 0 || gdi->stride == 0) {
+        swiftContext->imagePublishPending = FALSE;
+        return;
+    }
+
+    const size_t byteCount = (size_t)gdi->stride * (size_t)gdi->height;
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL,
+                                                              gdi->primary_buffer,
+                                                              byteCount,
+                                                              NULL);
+    if (!provider) {
+        return;
+    }
+
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGBitmapInfo bitmapInfo = kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst;
+    CGImageRef image = CGImageCreate((size_t)gdi->width,
+                                     (size_t)gdi->height,
+                                     8,
+                                     32,
+                                     (size_t)gdi->stride,
+                                     colorSpace,
+                                     bitmapInfo,
+                                     provider,
+                                     NULL,
+                                     false,
+                                     kCGRenderingIntentDefault);
+
+    SwiftRDPBridge* bridge = bridge_from_context(context);
+    if (image && bridge.delegate) {
+        swiftContext->imagePublishPending = FALSE;
+        swiftContext->lastImagePublishTime = now;
+        swiftContext->imagePublishCount++;
+        [bridge.delegate rdpBridge:bridge didUpdateImage:image width:gdi->width height:gdi->height];
+    }
+
+    if (image) CGImageRelease(image);
+    CGColorSpaceRelease(colorSpace);
+    CGDataProviderRelease(provider);
 }
 
 static SwiftRDPBridge* bridge_from_context(rdpContext* context) {
@@ -398,53 +459,9 @@ static BOOL my_EndPaint(rdpContext* context) {
         result = swiftContext->originalEndPaint(context);
     }
 
-    if (!result || !context || !context->gdi || !context->gdi->primary_buffer) {
-        return result;
+    if (result && context->gdi && context->gdi->primary_buffer) {
+        swiftContext->imagePublishPending = TRUE;
     }
-
-    const NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-    if (now - swiftContext->lastImagePublishTime < kMinimumImagePublishInterval) {
-        return result;
-    }
-    swiftContext->lastImagePublishTime = now;
-    swiftContext->imagePublishCount++;
-
-    rdpGdi* gdi = context->gdi;
-    if (gdi->width <= 0 || gdi->height <= 0 || gdi->stride == 0) {
-        return result;
-    }
-
-    const size_t byteCount = (size_t)gdi->stride * (size_t)gdi->height;
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL,
-                                                              gdi->primary_buffer,
-                                                              byteCount,
-                                                              NULL);
-    if (!provider) {
-        return result;
-    }
-
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGBitmapInfo bitmapInfo = kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst;
-    CGImageRef image = CGImageCreate((size_t)gdi->width,
-                                     (size_t)gdi->height,
-                                     8,
-                                     32,
-                                     (size_t)gdi->stride,
-                                     colorSpace,
-                                     bitmapInfo,
-                                     provider,
-                                     NULL,
-                                     false,
-                                     kCGRenderingIntentDefault);
-
-    SwiftRDPBridge* bridge = bridge_from_context(context);
-    if (image && bridge.delegate) {
-        [bridge.delegate rdpBridge:bridge didUpdateImage:image width:gdi->width height:gdi->height];
-    }
-
-    if (image) CGImageRelease(image);
-    CGColorSpaceRelease(colorSpace);
-    CGDataProviderRelease(provider);
 
     return result;
 }
@@ -809,6 +826,8 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
     if (readyBurst > swiftContext->maxReadyBurst) {
         swiftContext->maxReadyBurst = readyBurst;
     }
+
+    publish_pending_image(swiftContext);
 
     if (_connected) {
         cliprdr_poll_local_pasteboard((SwiftRDPContext*)_instance->context);
