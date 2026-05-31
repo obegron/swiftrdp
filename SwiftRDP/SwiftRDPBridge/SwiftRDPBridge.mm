@@ -35,7 +35,10 @@ typedef struct
     BOOL enableRemoteFx;
     BOOL enableAudioPlayback;
     BOOL hasSharedFolder;
+    NSTimeInterval lastImagePublishTime;
 } SwiftRDPContext;
+
+static const NSTimeInterval kMinimumImagePublishInterval = 1.0 / 30.0;
 
 static SwiftRDPBridge* bridge_from_context(rdpContext* context) {
     if (!context) return nil;
@@ -361,6 +364,12 @@ static BOOL my_EndPaint(rdpContext* context) {
         return result;
     }
 
+    const NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - swiftContext->lastImagePublishTime < kMinimumImagePublishInterval) {
+        return result;
+    }
+    swiftContext->lastImagePublishTime = now;
+
     rdpGdi* gdi = context->gdi;
     if (gdi->width <= 0 || gdi->height <= 0 || gdi->stride == 0) {
         return result;
@@ -494,7 +503,7 @@ static BOOL my_PreConnect(freerdp* instance) {
     freerdp_settings_set_bool(settings, FreeRDP_GfxH264, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2, TRUE);
-    freerdp_settings_set_uint32(settings, FreeRDP_FrameAcknowledge, 2);
+    freerdp_settings_set_uint32(settings, FreeRDP_FrameAcknowledge, 1);
     freerdp_settings_set_bool(settings, FreeRDP_GfxSuspendFrameAck, FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_AllowFontSmoothing, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SoftwareGdi, TRUE);
@@ -677,7 +686,7 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
         (char*)[size UTF8String],
         (char*)[bpp UTF8String],
         (char*)[sound UTF8String],
-        (char*)"/network:lan"
+        (char*)"/network:auto"
     };
 
     const int argc = (int)(sizeof(argv) / sizeof(argv[0]));
@@ -724,35 +733,39 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
 - (BOOL)process {
     if (!_instance) return FALSE;
 
-    HANDLE handles[64] = { 0 };
-    const DWORD handleCount = freerdp_get_event_handles(_instance->context,
-                                                        handles,
-                                                        sizeof(handles) / sizeof(handles[0]));
-    if (handleCount == 0) {
-        _connected = NO;
-        return FALSE;
-    }
+    BOOL hadReadyEvent = FALSE;
 
-    const DWORD waitStatus = WaitForMultipleObjects(handleCount, handles, FALSE, 10);
-    if (waitStatus == WAIT_FAILED) {
-        _connected = NO;
-        return FALSE;
-    }
-
-    if (waitStatus == WAIT_TIMEOUT) {
-        if (_connected) {
-            cliprdr_poll_local_pasteboard((SwiftRDPContext*)_instance->context);
+    for (NSUInteger iteration = 0; iteration < 64; iteration++) {
+        HANDLE handles[64] = { 0 };
+        const DWORD handleCount = freerdp_get_event_handles(_instance->context,
+                                                            handles,
+                                                            sizeof(handles) / sizeof(handles[0]));
+        if (handleCount == 0) {
+            _connected = NO;
+            return FALSE;
         }
-        return TRUE;
+
+        const DWORD timeout = hadReadyEvent ? 0 : 10;
+        const DWORD waitStatus = WaitForMultipleObjects(handleCount, handles, FALSE, timeout);
+        if (waitStatus == WAIT_TIMEOUT) {
+            break;
+        }
+        if (waitStatus == WAIT_FAILED) {
+            _connected = NO;
+            return FALSE;
+        }
+
+        hadReadyEvent = TRUE;
+        if (!freerdp_check_event_handles(_instance->context)) {
+            _connected = NO;
+            return FALSE;
+        }
     }
 
-    BOOL result = freerdp_check_event_handles(_instance->context);
-    if (!result) {
-        _connected = NO;
-    } else if (_connected) {
+    if (_connected) {
         cliprdr_poll_local_pasteboard((SwiftRDPContext*)_instance->context);
     }
-    return result;
+    return TRUE;
 }
 
 - (BOOL)sendMouseEventWithFlags:(uint16_t)flags x:(uint16_t)x y:(uint16_t)y {
