@@ -36,9 +36,46 @@ typedef struct
     BOOL enableAudioPlayback;
     BOOL hasSharedFolder;
     NSTimeInterval lastImagePublishTime;
+    NSTimeInterval lastTelemetryTime;
+    NSUInteger processWakeCount;
+    NSUInteger readyEventCount;
+    NSUInteger maxReadyBurst;
+    NSUInteger endPaintCount;
+    NSUInteger imagePublishCount;
 } SwiftRDPContext;
 
 static const NSTimeInterval kMinimumImagePublishInterval = 1.0 / 30.0;
+
+static void log_telemetry_if_due(SwiftRDPContext* context) {
+    if (!context) {
+        return;
+    }
+
+    const NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (context->lastTelemetryTime == 0) {
+        context->lastTelemetryTime = now;
+        return;
+    }
+
+    const NSTimeInterval elapsed = now - context->lastTelemetryTime;
+    if (elapsed < 1.0) {
+        return;
+    }
+
+    printf("RDP perf: wake=%.0f/s ready=%.0f/s maxBurst=%" PRIuPTR " endPaint=%.0f/s publish=%.0f/s\n",
+           context->processWakeCount / elapsed,
+           context->readyEventCount / elapsed,
+           (uintptr_t)context->maxReadyBurst,
+           context->endPaintCount / elapsed,
+           context->imagePublishCount / elapsed);
+
+    context->lastTelemetryTime = now;
+    context->processWakeCount = 0;
+    context->readyEventCount = 0;
+    context->maxReadyBurst = 0;
+    context->endPaintCount = 0;
+    context->imagePublishCount = 0;
+}
 
 static SwiftRDPBridge* bridge_from_context(rdpContext* context) {
     if (!context) return nil;
@@ -355,6 +392,7 @@ static BOOL my_EndPaint(rdpContext* context) {
 
     SwiftRDPContext* swiftContext = (SwiftRDPContext*)context;
     BOOL result = TRUE;
+    swiftContext->endPaintCount++;
 
     if (swiftContext->originalEndPaint) {
         result = swiftContext->originalEndPaint(context);
@@ -369,6 +407,7 @@ static BOOL my_EndPaint(rdpContext* context) {
         return result;
     }
     swiftContext->lastImagePublishTime = now;
+    swiftContext->imagePublishCount++;
 
     rdpGdi* gdi = context->gdi;
     if (gdi->width <= 0 || gdi->height <= 0 || gdi->stride == 0) {
@@ -733,7 +772,10 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
 - (BOOL)process {
     if (!_instance) return FALSE;
 
+    SwiftRDPContext* swiftContext = (SwiftRDPContext*)_instance->context;
+    swiftContext->processWakeCount++;
     BOOL hadReadyEvent = FALSE;
+    NSUInteger readyBurst = 0;
 
     for (NSUInteger iteration = 0; iteration < 64; iteration++) {
         HANDLE handles[64] = { 0 };
@@ -756,15 +798,22 @@ enableAudioPlayback:(BOOL)enableAudioPlayback
         }
 
         hadReadyEvent = TRUE;
+        readyBurst++;
+        swiftContext->readyEventCount++;
         if (!freerdp_check_event_handles(_instance->context)) {
             _connected = NO;
             return FALSE;
         }
     }
 
+    if (readyBurst > swiftContext->maxReadyBurst) {
+        swiftContext->maxReadyBurst = readyBurst;
+    }
+
     if (_connected) {
         cliprdr_poll_local_pasteboard((SwiftRDPContext*)_instance->context);
     }
+    log_telemetry_if_due(swiftContext);
     return TRUE;
 }
 
